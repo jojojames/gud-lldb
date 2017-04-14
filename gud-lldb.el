@@ -31,6 +31,10 @@
 
 (require 'gud)
 
+;; String handling functions.
+(require 'subr-x)
+;; Breakpoint display/hide functions.
+(require 'gdb-mi)
 
 ;; History of argument lists passed to lldb.
 (defvar gud-lldb-history nil)
@@ -54,6 +58,7 @@
   (setq gud-marker-acc
         (if gud-marker-acc (concat gud-marker-acc string) string))
   (lldb-extract-breakpoint-id gud-marker-acc)
+  (lldb--update-breakpoints-in-source gud-marker-acc)
   (let (start)
     ;; Process all complete markers in this chunk
     (while (or
@@ -189,6 +194,75 @@ and source-file directory for your debugger."
 (setcdr (nth 2 (nth 7 (assoc 'tbreak gud-menu-map))) '((lldb gdbmi gdb sdb xdb)))
 (setcdr (nth 2 (nth 7 (assoc 'run gud-menu-map))) '((lldb gdbmi gdb dbx jdb)))
 ;; (setcdr (nth 2 (nth 7 (assoc 'tooltips gud-menu-map))) '((lldb gdbmi guiler dbx sdb xdb pdb)))
+
+;; Breakpoints
+
+(defun lldb--extract-filename-from-token (token)
+  "Return file name of token."
+  (string-remove-suffix
+   "'"
+   (string-remove-prefix
+    "'"
+    (string-trim
+     (substring
+      token (+ 1 (string-match-p "=" token)))))))
+
+(defun lldb--extract-linenum-from-token (token)
+  "Return line number of token."
+  (string-to-number
+   (string-trim
+    (substring
+     token (+ 1 (string-match-p "=" token))))))
+
+(defun lldb--update-breakpoints-in-source (string)
+  ;; Search for "Breakpoint created: \\([^:\n]*\\):" pattern.
+  ;;(message "gud-marker-acc string is: |%s|" string)
+  (cond
+   ;; Breakpoints were listed.
+   ((string-match "Current breakpoints:" string)
+    (gdb-remove-breakpoint-icons (point-min) (point-max))
+    (mapcar
+     (lambda (bp-string)
+       (let* ((tokens (split-string bp-string ","))
+              (filename (lldb--extract-filename-from-token (car tokens)))
+              (linenum (lldb--extract-linenum-from-token (car (cdr tokens)))))
+         (with-current-buffer (get-buffer filename)
+           (lldb--put-breakpoint t nil linenum))))
+     (seq-remove (lambda (element)
+                   (not (string-match "file = " element)))
+                 (split-string string "\n"))))
+   ;; Breakpoint was added.
+   ((string-match "(lldb) Breakpoint \\([^:\n]*\\):" string)
+    (let* ((filename-linenum
+            (split-string
+             (car (split-string
+                   (substring
+                    string (+ 4 (string-match-p " at " string))) ",")) ":"))
+           (filename (car filename-linenum))
+           (linenum (string-to-number (car (cdr filename-linenum)))))
+      (with-current-buffer (get-buffer filename)
+        (lldb--put-breakpoint t nil linenum))))
+   ;; Breakpoint was removed.
+   ((string-match "breakpoints cleared:" string)
+    (let* ((tokens (split-string string ","))
+           (filename (lldb--extract-filename-from-token (car tokens)))
+           (linenum (lldb--extract-linenum-from-token (car (cdr tokens)))))
+      (with-current-buffer (get-buffer filename)
+        (let* ((posns (gdb-line-posns linenum))
+               (start (- (car posns) 1))
+               (end (+ (cdr posns) 1)))
+          (lldb--remove-breakpoint start end)))))
+   ((string-match "Breakpoint created: \\([^:\n]*\\):" string)
+    (setq gud-breakpoint-id (match-string 1 string))
+    (message "breakpoint id: %s" gud-breakpoint-id))))
+
+(defun lldb--put-breakpoint (enabled bptno &optional line)
+  "Wrap `gdb-put-breakpoint-icon'."
+  (gdb-put-breakpoint-icon enabled bptno line))
+
+(defun lldb--remove-breakpoint (start end)
+  "Wrap `gdb-remove-breakpoint-icons'."
+  (gdb-remove-breakpoint-icons start end))
 
 (provide 'gud-lldb)
 
