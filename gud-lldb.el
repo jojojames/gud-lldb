@@ -197,6 +197,14 @@ and source-file directory for your debugger."
 
 ;; Breakpoints
 
+(defun lldb--put-breakpoint (enabled bptno &optional line)
+  "Wrap `gdb-put-breakpoint-icon'."
+  (gdb-put-breakpoint-icon enabled bptno line))
+
+(defun lldb--remove-breakpoint (start end)
+  "Wrap `gdb-remove-breakpoint-icons'."
+  (gdb-remove-breakpoint-icons start end))
+
 (defun lldb--extract-filename-from-token (token)
   "Return file name of token."
   (string-remove-suffix
@@ -255,14 +263,6 @@ and source-file directory for your debugger."
    ((string-match "Breakpoint created: \\([^:\n]*\\):" string)
     (setq gud-breakpoint-id (match-string 1 string))
     (message "breakpoint id: %s" gud-breakpoint-id))))
-
-(defun lldb--put-breakpoint (enabled bptno &optional line)
-  "Wrap `gdb-put-breakpoint-icon'."
-  (gdb-put-breakpoint-icon enabled bptno line))
-
-(defun lldb--remove-breakpoint (start end)
-  "Wrap `gdb-remove-breakpoint-icons'."
-  (gdb-remove-breakpoint-icons start end))
 
 (provide 'gud-lldb)
 
